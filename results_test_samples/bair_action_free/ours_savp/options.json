@@ -1,0 +1,22 @@
+{
+    "batch_size": 8,
+    "checkpoint": "pretrained_models/bair_action_free/ours_savp",
+    "dataset": "softmotion",
+    "dataset_hparams": "sequence_length=30",
+    "fps": 4,
+    "gif_length": null,
+    "gpu_mem_frac": 0,
+    "input_dir": "data/bair",
+    "mode": "test",
+    "model": "savp",
+    "model_hparams": null,
+    "num_epochs": 1,
+    "num_samples": null,
+    "num_stochastic_samples": 5,
+    "output_gif_dir": "results_test_samples/bair_action_free/ours_savp",
+    "output_png_dir": "results_test_samples/bair_action_free/ours_savp",
+    "results_dir": "results_test_samples/bair_action_free",
+    "results_gif_dir": "results_test_samples/bair_action_free",
+    "results_png_dir": "results_test_samples/bair_action_free",
+    "seed": 7
+}
