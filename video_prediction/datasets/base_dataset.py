@@ -277,10 +277,12 @@ class VideoDataset(BaseVideoDataset):
                     if len(image_str) == (height * width * 4):
                         inferred_shape = (height, width, 3)
                 if shape is None:
-                    if inferred_shape is not None:
+                    name_and_shape[1] = (160,320,3)
+                    '''if inferred_shape is not None:
                         name_and_shape[1] = inferred_shape
                     else:
                         raise ValueError('Unable to infer shape for feature %s of size %d.' % (name, len(image_str)))
+			'''
                 else:
                     if inferred_shape is not None and inferred_shape != shape:
                         raise ValueError('Inferred shape for feature %s is %r but instead got shape %r.' %

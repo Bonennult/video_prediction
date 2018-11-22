@@ -237,6 +237,19 @@ class DNACell(tf.nn.rnn_cell.RNNCell):
                 (self.hparams.ngf, True),
                 (self.hparams.ngf, False),
             ]
+        elif (height, width) == (160, 320):
+            self.encoder_layer_specs = [
+                (self.hparams.ngf, False),
+                (self.hparams.ngf * 2, False),
+                (self.hparams.ngf * 4, True),
+                (self.hparams.ngf * 8, True),
+            ]
+            self.decoder_layer_specs = [
+                (self.hparams.ngf * 8, True),
+                (self.hparams.ngf * 4, True),
+                (self.hparams.ngf * 2, False),
+                (self.hparams.ngf, False),
+            ]
         else:
             raise NotImplementedError
 

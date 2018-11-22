@@ -232,7 +232,7 @@ def main():
             run_start_time = time.time()
             results = sess.run(fetches)
             run_elapsed_time = time.time() - run_start_time
-            if run_elapsed_time > 1.5:
+            if run_elapsed_time > 3.0:
                 print('session.run took %0.1fs' % run_elapsed_time)
 
             if should(args.summary_freq):

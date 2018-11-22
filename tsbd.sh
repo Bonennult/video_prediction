@@ -1,1 +1,1 @@
-tensorboard --logdir logs/bair_action_free
+tensorboard --logdir logs/comma

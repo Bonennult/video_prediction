@@ -17,8 +17,8 @@ def vgg_assign_from_values_fn(model='vgg16',
         cache_subdir='models')
     weights_file = h5py.File(weights_path, 'r')
 
-    num_blocks = 5
-    max_num_convs_in_block = 3 if model == 'vgg16' else 4
+    num_blocks = 4    # num_blocks = 5
+    max_num_convs_in_block = 2 if model == 'vgg16' else 4  # max_num_convs_in_block = 3 if model == 'vgg16' else 4
 
     weight_name_kernel_postfix = '_W_1:0'
     weight_name_bias_postfix = '_b_1:0'
@@ -71,8 +71,8 @@ def vgg16(rgb_image):
     tensors.append(x)
     x = tf.layers.conv2d(x, 256, (3, 3), padding='same', activation=tf.nn.relu, trainable=False, name='block3_conv2')
     tensors.append(x)
-    x = tf.layers.conv2d(x, 256, (3, 3), padding='same', activation=tf.nn.relu, trainable=False, name='block3_conv3')
-    tensors.append(x)
+    #x = tf.layers.conv2d(x, 256, (3, 3), padding='same', activation=tf.nn.relu, trainable=False, name='block3_conv3')
+    #tensors.append(x)
     features.append(x)
     x = tf.layers.max_pooling2d(x, (2, 2), (2, 2), padding='same', name='block3_pool')
     tensors.append(x)
@@ -82,12 +82,13 @@ def vgg16(rgb_image):
     tensors.append(x)
     x = tf.layers.conv2d(x, 512, (3, 3), padding='same', activation=tf.nn.relu, trainable=False, name='block4_conv2')
     tensors.append(x)
-    x = tf.layers.conv2d(x, 512, (3, 3), padding='same', activation=tf.nn.relu, trainable=False, name='block4_conv3')
-    tensors.append(x)
+    #x = tf.layers.conv2d(x, 512, (3, 3), padding='same', activation=tf.nn.relu, trainable=False, name='block4_conv3')
+    #tensors.append(x)
     features.append(x)
     x = tf.layers.max_pooling2d(x, (2, 2), (2, 2), padding='same', name='block4_pool')
     tensors.append(x)
 
+    '''
     # Block5
     x = tf.layers.conv2d(x, 512, (3, 3), padding='same', activation=tf.nn.relu, trainable=False, name='block5_conv1')
     tensors.append(x)
@@ -98,6 +99,7 @@ def vgg16(rgb_image):
     features.append(x)
     x = tf.layers.max_pooling2d(x, (2, 2), (2, 2), padding='same', name='block5_pool')
     tensors.append(x)
+    '''
 
     return tensors, features
 
