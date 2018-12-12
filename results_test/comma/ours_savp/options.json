@@ -1,0 +1,26 @@
+{
+    "batch_size": 1,
+    "checkpoint": "pretrained_models/comma/ours_savp",
+    "dataset": "bair",
+    "dataset_hparams": "sequence_length=30",
+    "eval_parallel_iterations": 1,
+    "eval_substasks": [
+        "max",
+        "min"
+    ],
+    "gpu_mem_frac": 0.7,
+    "gt_inputs_dir": null,
+    "gt_outputs_dir": null,
+    "input_dir": "data/comma",
+    "mode": "test",
+    "model": "savp",
+    "model_hparams": null,
+    "num_epochs": 1,
+    "num_samples": null,
+    "num_stochastic_samples": 10,
+    "only_metrics": false,
+    "output_dir": "results_test/comma/ours_savp",
+    "results_dir": "results_test/comma",
+    "seed": 7,
+    "tasks": null
+}
