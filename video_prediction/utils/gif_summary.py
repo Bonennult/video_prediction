@@ -12,13 +12,17 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
+
 import numpy as np
 import tensorflow as tf
 from tensorflow.python.ops import summary_op_util
+
 from video_prediction.utils import ffmpeg_gif
+
 
 def py_gif_summary(tag, images, max_outputs, fps):
   """Outputs a `Summary` protocol buffer with gif animations.
@@ -33,7 +37,8 @@ def py_gif_summary(tag, images, max_outputs, fps):
   Raises:
     ValueError: If `images` is not a 5-D `uint8` array with 1 or 3 channels.
   """
-  if isinstance(tag, bytes):
+  is_bytes = isinstance(tag, bytes)
+  if is_bytes:
     tag = tag.decode("utf-8")
   images = np.asarray(images)
   if images.dtype != np.uint8:
@@ -43,6 +48,7 @@ def py_gif_summary(tag, images, max_outputs, fps):
   batch_size, _, height, width, channels = images.shape
   if channels not in (1, 3):
     raise ValueError("Tensors must have 1 or 3 channels for gif summary.")
+
   summ = tf.Summary()
   num_outputs = min(batch_size, max_outputs)
   for i in range(num_outputs):
@@ -63,10 +69,10 @@ def py_gif_summary(tag, images, max_outputs, fps):
         with io.BytesIO() as output:
           Image.fromarray(images[i][0]).save(output, "PNG")
           image_summ.encoded_image_string = output.getvalue()
-      except ImportError as e:
+      except:
         tf.logging.warning(
             "Gif summaries requires ffmpeg or PIL to be installed: %s", e)
-        image_summ.encoded_image_string = ""
+        image_summ.encoded_image_string = "".encode('utf-8') if is_bytes else ""
     if num_outputs == 1:
       summ_tag = "{}/gif".format(tag)
     else:
@@ -74,6 +80,7 @@ def py_gif_summary(tag, images, max_outputs, fps):
     summ.value.add(tag=summ_tag, image=image_summ)
   summ_str = summ.SerializeToString()
   return summ_str
+
 
 def gif_summary(name, tensor, max_outputs=3, fps=10, collections=None,
                 family=None):
