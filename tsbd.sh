@@ -1,1 +1,1 @@
-tensorboard --logdir logs/comma
+tensorboard --logdir logs/comma_m_1903

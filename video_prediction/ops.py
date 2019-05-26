@@ -3,13 +3,15 @@ import tensorflow as tf
 
 
 def dense(inputs, units, use_spectral_norm=False, use_bias=True):
+    ### 相当于一个线性单元 5/16
+    ### inputs.shape=[batch_size,-1] 5/9
     with tf.variable_scope('dense'):
         input_shape = inputs.get_shape().as_list()
         kernel_shape = [input_shape[1], units]
         kernel = tf.get_variable('kernel', kernel_shape, dtype=tf.float32, initializer=tf.truncated_normal_initializer(stddev=0.02))
         if use_spectral_norm:
             kernel = spectral_normed_weight(kernel)
-        outputs = tf.matmul(inputs, kernel)
+        outputs = tf.matmul(inputs, kernel)  ### tf.matmul 要求除最后两个维度，之前的维度需要完全相同 5/19
         if use_bias:
             bias = tf.get_variable('bias', [units], dtype=tf.float32, initializer=tf.zeros_initializer())
             outputs = tf.nn.bias_add(outputs, bias)
@@ -1018,6 +1020,7 @@ def sigmoid_kl_with_logits(logits, targets):
 
 
 def spectral_normed_weight(W, u=None, num_iters=1):
+    ### 谱正则化，用于discriminator 5/9
     SPECTRAL_NORMALIZATION_VARIABLES = 'spectral_normalization_variables'
 
     # Usually num_iters = 1 will be enough

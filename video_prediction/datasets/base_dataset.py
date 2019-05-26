@@ -14,7 +14,7 @@ class BaseVideoDataset(object):
                  hparams_dict=None, hparams=None):
         """
         Args:
-            input_dir: either a directory containing subdirectories train,
+            input_dir: either a directory containing subdirectories train,  ### 5/3
                 val, test, etc, or a directory containing the tfrecords.
             mode: either train, val, or test
             num_epochs: if None, dataset is iterated indefinitely.
@@ -40,7 +40,8 @@ class BaseVideoDataset(object):
             raise FileNotFoundError("input_dir %s does not exist" % self.input_dir)
         self.filenames = None
         # look for tfrecords in input_dir and input_dir/mode directories
-        for input_dir in [self.input_dir, os.path.join(self.input_dir, self.mode)]:
+        for input_dir in [self.input_dir, os.path.join(self.input_dir, self.mode)]:  ### 照应前面注释 5/3
+            ### glob.glob()匹配所有的符合条件的文件，并将其以list的形式返回 5/3
             filenames = glob.glob(os.path.join(input_dir, '*.tfrecord*'))
             if filenames:
                 self.input_dir = input_dir
@@ -48,6 +49,9 @@ class BaseVideoDataset(object):
                 break
         if not self.filenames:
             raise FileNotFoundError('No tfrecords were found in %s.' % self.input_dir)
+        ### os.path.split(),以 "PATH" 中最后一个 '/' 作为分隔符，将“文件名”和“路径”分割开，并不智能 5/3
+        ### os.path.basename()，返回文件名 5/3
+        ### 这里就是根据数据集的路径来确定数据集的名称dataset_name 5/3
         self.dataset_name = os.path.basename(os.path.split(self.input_dir)[0])
 
         self.state_like_names_and_shapes = OrderedDict()
@@ -98,7 +102,7 @@ class BaseVideoDataset(object):
     def get_default_hparams(self):
         return HParams(**self.get_default_hparams_dict())
 
-    def parse_hparams(self, hparams_dict, hparams):
+    def parse_hparams(self, hparams_dict, hparams):  ### 用hparams_dict和hparams更新/补充超参数 5/3
         parsed_hparams = self.get_default_hparams().override_from_dict(hparams_dict or {})
         if hparams:
             if not isinstance(hparams, (list, tuple)):
@@ -109,7 +113,7 @@ class BaseVideoDataset(object):
             parsed_hparams.long_sequence_length = parsed_hparams.sequence_length
         return parsed_hparams
 
-    @property
+    @property   ### 装饰器，负责把一个getter方法变成属性调用，如果不定义@.setter就是一个只读属性 5/3
     def jpeg_encoding(self):
         raise NotImplementedError
 
@@ -117,9 +121,10 @@ class BaseVideoDataset(object):
         self.hparams.sequence_length = sequence_length
 
     def filter(self, serialized_example):
-        return tf.convert_to_tensor(True)
+        return tf.convert_to_tensor(True)  ### 把python的变量类型转换成tensor 5/3
 
     def parser(self, serialized_example):
+        ### softmotion_dataset.py中SoftmotionVideoDataset子类定义了 5/3
         """
         Parses a single tf.train.Example or tf.train.SequenceExample into
         images, states, actions, etc tensors.
@@ -127,13 +132,16 @@ class BaseVideoDataset(object):
         raise NotImplementedError
 
     def make_dataset(self, batch_size):
-        filenames = self.filenames
+        filenames = self.filenames   ### '.tfrecords'文件名（含路径）构成的列表 5/3
         shuffle = self.mode == 'train' or (self.mode == 'val' and self.hparams.shuffle_on_val)
+        ### 打乱文件名 5/3
         if shuffle:
             random.shuffle(filenames)
 
+        ### 从'.tfrecords'文件获得序列化数据 5/3
         dataset = tf.data.TFRecordDataset(filenames, buffer_size=8 * 1024 * 1024)
         dataset = dataset.filter(self.filter)
+        ### 打乱数据 5/3
         if shuffle:
             dataset = dataset.apply(tf.contrib.data.shuffle_and_repeat(buffer_size=1024, count=self.num_epochs))
         else:
@@ -147,7 +155,7 @@ class BaseVideoDataset(object):
         num_parallel_calls = None if shuffle else 1  # for reproducibility (e.g. sampled subclips from the test set)
         dataset = dataset.apply(tf.contrib.data.map_and_batch(
             _parser, batch_size, drop_remainder=True, num_parallel_calls=num_parallel_calls))
-        dataset = dataset.prefetch(batch_size)
+        dataset = dataset.prefetch(batch_size)  ### 加载到缓冲通道 5/4
         return dataset
 
     def make_batch(self, batch_size):
@@ -157,11 +165,13 @@ class BaseVideoDataset(object):
 
     def decode_and_preprocess_images(self, image_buffers, image_shape):
         def decode_and_preprocess_image(image_buffer):
-            image_buffer = tf.reshape(image_buffer, [])
+            image_buffer = tf.reshape(image_buffer, [])  ### 为什么是[]?image_buffer应该是1*1的？ 5/4
+            ### jpeg解码 5/4
             if self.jpeg_encoding:
                 image = tf.image.decode_jpeg(image_buffer)
             else:
                 image = tf.decode_raw(image_buffer, tf.uint8)
+            ### 裁剪和放缩 5/4
             image = tf.reshape(image, image_shape)
             crop_size = self.hparams.crop_size
             scale_size = self.hparams.scale_size
@@ -184,7 +194,7 @@ class BaseVideoDataset(object):
             return image
 
         if not isinstance(image_buffers, (list, tuple)):
-            image_buffers = tf.unstack(image_buffers)
+            image_buffers = tf.unstack(image_buffers)  ### 对矩阵进行分解的函数 5/4
         images = [decode_and_preprocess_image(image_buffer) for image_buffer in image_buffers]
         images = tf.image.convert_image_dtype(images, dtype=tf.float32)
         return images
@@ -197,8 +207,8 @@ class BaseVideoDataset(object):
         """
         # handle random shifting and frame skip
         sequence_length = self.hparams.sequence_length  # desired sequence length
-        frame_skip = self.hparams.frame_skip
-        time_shift = self.hparams.time_shift
+        frame_skip = self.hparams.frame_skip   ### 使用的两帧之间相隔几帧 5/4
+        time_shift = self.hparams.time_shift   ### 
         if (time_shift and self.mode == 'train') or self.hparams.force_time_shift:
             assert time_shift > 0 and isinstance(time_shift, int)
             if isinstance(example_sequence_length, tf.Tensor):
@@ -211,11 +221,13 @@ class BaseVideoDataset(object):
             with tf.control_dependencies([tf.assert_greater_equal(num_shifts, 0,
                     data=[example_sequence_length, num_shifts], message=assert_message)]):
                 t_start = tf.random_uniform([], 0, num_shifts + 1, dtype=tf.int32, seed=self.seed) * time_shift
+                ### 生成一个0~num_shifts+1的随机数,不包括num_shifts+1 5/4
         else:
             t_start = 0
         state_like_t_slice = slice(t_start, t_start + (sequence_length - 1) * (frame_skip + 1) + 1, frame_skip + 1)
         action_like_t_slice = slice(t_start, t_start + (sequence_length - 1) * (frame_skip + 1))
 
+        ### 按照切片取出需要的帧 5/4
         for example_name, seq in state_like_seqs.items():
             seq = tf.convert_to_tensor(seq)[state_like_t_slice]
             seq.set_shape([sequence_length] + seq.shape.as_list()[1:])
@@ -224,6 +236,7 @@ class BaseVideoDataset(object):
             seq = tf.convert_to_tensor(seq)[action_like_t_slice]
             seq.set_shape([(sequence_length - 1) * (frame_skip + 1)] + seq.shape.as_list()[1:])
             # concatenate actions of skipped frames into single macro actions
+            ### 把中间隔的几帧的action都合并到一个里边 5/4
             seq = tf.reshape(seq, [sequence_length - 1, -1])
             action_like_seqs[example_name] = seq
         return state_like_seqs, action_like_seqs
@@ -253,10 +266,12 @@ class VideoDataset(BaseVideoDataset):
         from google.protobuf.json_format import MessageToDict
         example = next(tf.python_io.tf_record_iterator(self.filenames[0]))
         self._dict_message = MessageToDict(tf.train.Example.FromString(example))
+        ### 这里在干嘛？ 5/4
         for example_name, name_and_shape in (list(state_like_names_and_shapes.items()) +
                                              list(action_like_names_and_shapes.items())):
             name, shape = name_and_shape
             feature = self._dict_message['features']['feature']
+            ### 取出含有数字的项，为什么name中有'%d'这个字符串？ 5/4
             names = [name_ for name_ in feature.keys() if re.search(name.replace('%d', '\d+'), name_) is not None]
             if not names:
                 raise ValueError('Could not found any feature with name pattern %s.' % name)
@@ -364,6 +379,9 @@ class SequenceExampleVideoDataset(BaseVideoDataset):
         """
         Parses a single tf.train.SequenceExample into images, states, actions, etc tensors.
         """
+        ### sequence_features将feature的键映射到到SparseFeature 或 FixedLenFeature 或 VarLenFeature值 5/4
+        ### 目的是为了tf.parse_example()解析单个example 5/4
+        ### name是example的键，那么example_name又是什么？ 5/4
         sequence_features = dict()
         for example_name, (name, shape) in self.state_like_names_and_shapes.items():
             if example_name == 'images':  # special handling for image
@@ -456,6 +474,7 @@ class VarLenFeatureVideoDataset(BaseVideoDataset):
 
 
 if __name__ == '__main__':
+    ### 测试用,训练时不会执行下面的代码 5/4
     import cv2
     from video_prediction import datasets
 

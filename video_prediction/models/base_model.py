@@ -277,12 +277,14 @@ class VideoPredictionModel(BaseVideoPredictionModel):
                 These values overrides any values in hparams_dict (if any).
         """
         super(VideoPredictionModel, self).__init__(mode, hparams_dict, hparams, **kwargs)
+        ### functools.partial(func,args)用于固定函数func的一些参数为args，返回的是一个函数 5/15
         self.generator_fn = functools.partial(generator_fn, mode=self.mode, hparams=self.hparams)
         self.discriminator_fn = functools.partial(discriminator_fn, mode=self.mode, hparams=self.hparams) if discriminator_fn else None
         self.generator_scope = generator_scope
         self.discriminator_scope = discriminator_scope
         self.aggregate_nccl = aggregate_nccl
 
+        ### 学习率衰减相关，待定 5/15
         if any(self.hparams.lr_boundaries):
             global_step = tf.train.get_or_create_global_step()
             lr_values = list(self.hparams.lr * 0.1 ** np.arange(len(self.hparams.lr_boundaries) + 1))
@@ -408,9 +410,11 @@ class VideoPredictionModel(BaseVideoPredictionModel):
         # batch-major to time-major
         inputs = nest.map_structure(transpose_batch_time, inputs)
 
+        ### generator 5/6
         with tf.variable_scope(self.generator_scope):
             gen_outputs = self.generator_fn(inputs)
 
+        ### discriminator 5/6
         if self.discriminator_fn:
             with tf.variable_scope(self.discriminator_scope) as discrim_scope:
                 discrim_outputs = self.discriminator_fn(inputs, gen_outputs)
@@ -421,7 +425,7 @@ class VideoPredictionModel(BaseVideoPredictionModel):
             discrim_outputs = {}
             discrim_outputs_post = {}
 
-        outputs = [gen_outputs, discrim_outputs]
+        outputs = [gen_outputs, discrim_outputs]  ### gen_outputs是一个dict 5/6
         total_num_outputs = sum([len(output) for output in outputs])
         outputs = OrderedDict(itertools.chain(*[output.items() for output in outputs]))
         assert len(outputs) == total_num_outputs  # ensure no output is lost because of repeated keys
@@ -431,6 +435,7 @@ class VideoPredictionModel(BaseVideoPredictionModel):
         if isinstance(self.kl_weight, tf.Tensor):
             outputs['kl_weight'] = self.kl_weight
 
+        ### 计算 loss 5/6
         if self.mode == 'train':
             with tf.name_scope("discriminator_loss"):
                 d_losses = self.discriminator_loss_fn(inputs, outputs)
@@ -474,18 +479,24 @@ class VideoPredictionModel(BaseVideoPredictionModel):
         # be captured here.
         original_global_variables = tf.global_variables()
 
-        if self.num_gpus <= 1:  # cpu or 1 gpu
+        ################### cpu or 1 gpu 5/6 #####################
+        if self.num_gpus <= 1:          # cpu or 1 gpu
+            ############# forward ############
             outputs_tuple, losses_tuple, loss_tuple, metrics_tuple = self.tower_fn(self.inputs)
             self.outputs, self.eval_outputs = outputs_tuple
             self.d_losses, self.g_losses, g_losses_post = losses_tuple
             self.d_loss, self.g_loss, g_loss_post = loss_tuple
             self.metrics, self.eval_metrics = metrics_tuple
 
+            ############# backward ############
+            ### 返回所有 当前计算图中 在获取变量时未标记 trainable=False 的变量集合 5/6
             self.d_vars = tf.trainable_variables(self.discriminator_scope)
             self.g_vars = tf.trainable_variables(self.generator_scope)
+            ### 创建优化器 5/6
             g_optimizer = tf.train.AdamOptimizer(self.learning_rate, self.hparams.beta1, self.hparams.beta2)
             d_optimizer = tf.train.AdamOptimizer(self.learning_rate, self.hparams.beta1, self.hparams.beta2)
 
+            ### 计算梯度 5/6
             if self.mode == 'train' and (self.d_losses or self.g_losses):
                 with tf.control_dependencies(tf.get_collection(tf.GraphKeys.UPDATE_OPS)):
                     if self.d_losses:
@@ -514,14 +525,17 @@ class VideoPredictionModel(BaseVideoPredictionModel):
             global_variables = [var for var in tf.global_variables() if var not in original_global_variables]
             self.saveable_variables = [global_step] + global_variables
             self.post_init_ops = []
-        else:
+        ################### 多gpu并行 5/6 #####################
+        else:   
             if tf.get_variable_scope().name:
                 # This is because how variable scope works with empty strings when it's not the root scope, causing
                 # repeated forward slashes.
                 raise NotImplementedError('Unable to handle multi-gpu model created within a non-root variable scope.')
 
+            ### 将数据集均分给多个 gpu 5/6
             tower_inputs = [OrderedDict() for _ in range(self.num_gpus)]
             for name, input in self.inputs.items():
+                ### batch_size要可以被num_gpu整除 5/6
                 input_splits = tf.split(input, self.num_gpus)  # assumes batch_size is divisible by num_gpus
                 for i in range(self.num_gpus):
                     tower_inputs[i][name] = input_splits[i]
@@ -534,6 +548,7 @@ class VideoPredictionModel(BaseVideoPredictionModel):
             tower_g_loss = []
             tower_g_loss_post = []
             tower_metrics_tuple = []
+            ############## 针对每个 gpu 进行 forward 5/6 ##############
             for i in range(self.num_gpus):
                 worker_device = '/gpu:%d' % i
                 if self.aggregate_nccl:
@@ -546,6 +561,7 @@ class VideoPredictionModel(BaseVideoPredictionModel):
                     device_setter = local_device_setter(worker_device=worker_device)
                 with tf.variable_scope(scope_name, reuse=scope_reuse):
                     with tf.device(device_setter):
+                        ############### forward ##############
                         outputs_tuple, losses_tuple, loss_tuple, metrics_tuple = self.tower_fn(tower_inputs[i])
                         tower_outputs_tuple.append(outputs_tuple)
                         d_losses, g_losses, g_losses_post = losses_tuple
@@ -560,7 +576,10 @@ class VideoPredictionModel(BaseVideoPredictionModel):
             self.d_vars = tf.trainable_variables(self.discriminator_scope)
             self.g_vars = tf.trainable_variables(self.generator_scope)
 
+            ############### backward ##############
+            ### 把各个 gpu 上的参数、loss合并 5/6
             if self.aggregate_nccl:
+                ### 获取可训练参数 5/6
                 scope_replica = lambda scope, i: ('' if i == 0 else 'v%d/' % i) + scope
                 tower_d_vars = [tf.trainable_variables(
                     scope_replica(self.discriminator_scope, i)) for i in range(self.num_gpus)]
@@ -568,11 +587,13 @@ class VideoPredictionModel(BaseVideoPredictionModel):
                     scope_replica(self.generator_scope, i)) for i in range(self.num_gpus)]
                 assert self.d_vars == tower_d_vars[0]
                 assert self.g_vars == tower_g_vars[0]
+                ### 创建优化器 5/6
                 tower_d_optimizer = [tf.train.AdamOptimizer(
                     self.learning_rate, self.hparams.beta1, self.hparams.beta2) for _ in range(self.num_gpus)]
                 tower_g_optimizer = [tf.train.AdamOptimizer(
                     self.learning_rate, self.hparams.beta1, self.hparams.beta2) for _ in range(self.num_gpus)]
 
+                ### 计算梯度 5/6
                 if self.mode == 'train' and (any(tower_d_losses) or any(tower_g_losses)):
                     tower_d_gradvars = []
                     tower_g_gradvars = []
@@ -580,6 +601,7 @@ class VideoPredictionModel(BaseVideoPredictionModel):
                     tower_g_train_op = []
                     with tf.control_dependencies(tf.get_collection(tf.GraphKeys.UPDATE_OPS)):
                         if any(tower_d_losses):
+                            ### 对每个gpu分别计算梯度 5/6
                             for i in range(self.num_gpus):
                                 with tf.device('/gpu:%d' % i):
                                     with tf.name_scope(scope_replica('d_compute_gradients', i)):
@@ -587,18 +609,22 @@ class VideoPredictionModel(BaseVideoPredictionModel):
                                             tower_d_loss[i], var_list=tower_d_vars[i])
                                         tower_d_gradvars.append(d_gradvars)
 
+                            ### 计算总的梯度 5/6
                             all_d_grads, all_d_vars = tf_utils.split_grad_list(tower_d_gradvars)
                             all_d_grads = tf_utils.allreduce_grads(all_d_grads, average=True)
                             tower_d_gradvars = tf_utils.merge_grad_list(all_d_grads, all_d_vars)
 
+                            ### 优化op 5/6
                             for i in range(self.num_gpus):
                                 with tf.device('/gpu:%d' % i):
                                     with tf.name_scope(scope_replica('d_apply_gradients', i)):
                                         d_train_op = tower_d_optimizer[i].apply_gradients(tower_d_gradvars[i])
                                         tower_d_train_op.append(d_train_op)
                             d_train_op = tf.group(*tower_d_train_op)
+                        ### test or validation 5/6
                         else:
                             d_train_op = tf.no_op()
+                    ### 这个 post 是为了干什么？ 5/6
                     with tf.control_dependencies([d_train_op] if not self.hparams.joint_gan_optimization else []):
                         if any(tower_g_losses_post):
                             for i in range(self.num_gpus):
@@ -644,10 +670,13 @@ class VideoPredictionModel(BaseVideoPredictionModel):
                         assert var.name == 'v%d/%s' % (i, var0.name)
                         post_init_ops.append(var.assign(var0.read_value()))
                 self.post_init_ops = post_init_ops
+            ### 没有 self.aggregate_nccl？ 5/6
             else:  # not self.aggregate_nccl (i.e. aggregation in cpu)
+                ### 创建优化器 5/6
                 g_optimizer = tf.train.AdamOptimizer(self.learning_rate, self.hparams.beta1, self.hparams.beta2)
                 d_optimizer = tf.train.AdamOptimizer(self.learning_rate, self.hparams.beta1, self.hparams.beta2)
 
+                ### 计算梯度 5/6
                 if self.mode == 'train' and (any(tower_d_losses) or any(tower_g_losses)):
                     with tf.control_dependencies(tf.get_collection(tf.GraphKeys.UPDATE_OPS)):
                         if any(tower_d_losses):
@@ -680,6 +709,7 @@ class VideoPredictionModel(BaseVideoPredictionModel):
                 self.saveable_variables = [global_step] + global_variables
                 self.post_init_ops = []
 
+            ### reduce_tensor? 5/6
             # Device that runs the ops to apply global gradient updates.
             consolidation_device = '/cpu:0'
             with tf.device(consolidation_device):
@@ -698,6 +728,7 @@ class VideoPredictionModel(BaseVideoPredictionModel):
         local_variables = set(tf.local_variables()) - original_local_variables
         self.accum_eval_metrics_reset_op = tf.group([tf.assign(v, tf.zeros_like(v)) for v in local_variables])
 
+        ### 写入summary 5/6
         original_summaries = set(tf.get_collection(tf.GraphKeys.SUMMARIES))
         add_summaries(self.inputs)
         add_summaries(self.outputs)

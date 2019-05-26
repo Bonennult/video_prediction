@@ -65,11 +65,13 @@ def main():
 
     args = parser.parse_args()
 
+    ### 设置随机数种子 5/3
     if args.seed is not None:
         tf.set_random_seed(args.seed)
         np.random.seed(args.seed)
         random.seed(args.seed)
 
+    ### 确定输出路径 5/3
     if args.output_dir is None:
         list_depth = 0
         model_fname = ''
@@ -88,16 +90,18 @@ def main():
             
         args.output_dir = os.path.join(args.logs_dir, model_fname) + args.output_dir_postfix
 
+    ### 断点训练 5/3
     if args.resume:
         if args.checkpoint:
             raise ValueError('resume and checkpoint cannot both be specified')
         args.checkpoint = args.output_dir
 
+    ### 加载数据集和模型的超参数 5/3
     dataset_hparams_dict = {}
     model_hparams_dict = {}
     if args.dataset_hparams_dict:
         with open(args.dataset_hparams_dict) as f:
-            dataset_hparams_dict.update(json.loads(f.read()))
+            dataset_hparams_dict.update(json.loads(f.read()))   ### 更新字典 5/3
     if args.model_hparams_dict:
         with open(args.model_hparams_dict) as f:
             model_hparams_dict.update(json.loads(f.read()))
@@ -130,7 +134,8 @@ def main():
         print(k, "=", v)
     print('------------------------------------- End --------------------------------------')
 
-    VideoDataset = datasets.get_dataset_class(args.dataset)
+    VideoDataset = datasets.get_dataset_class(args.dataset)  ### 确定数据集类型 5/3
+    ### 生成训练数据集 5/3
     train_dataset = VideoDataset(
         args.input_dir,
         mode='train',
@@ -155,6 +160,7 @@ def main():
     variable_scope = tf.get_variable_scope()
     variable_scope.set_use_resource(True)
 
+    ### 确定模型 5/3
     VideoPredictionModel = models.get_model_class(args.model)
     hparams_dict = dict(model_hparams_dict)
     hparams_dict.update({
@@ -162,6 +168,7 @@ def main():
         'sequence_length': train_dataset.hparams.sequence_length,
         'repeat': train_dataset.hparams.time_shift,
     })
+    ### 生成模型 5/3
     model = VideoPredictionModel(
         hparams_dict=hparams_dict,
         hparams=args.model_hparams,
@@ -227,6 +234,7 @@ def main():
     with tf.Session(config=config) as sess:
         print("parameter_count =", sess.run(parameter_count))
 
+        ### 初始化，加载模型 5/15
         sess.run(tf.global_variables_initializer())
         sess.run(tf.local_variables_initializer())
         model.restore(sess, args.checkpoint)
@@ -271,12 +279,13 @@ def main():
                 fetches["eval_summary"] = model.eval_summary_op
 
             run_start_time = time.time()
-            results = sess.run(fetches)
+            results = sess.run(fetches)   ### 迭代一次模型 5/3
             run_elapsed_time = time.time() - run_start_time
 
             if run_elapsed_time > 3.0 and step > 0 and set(fetches.keys()) == {"global_step", "train_op"}:   ###
                 print('running train_op took too long (%0.1fs)' % run_elapsed_time)
 
+            ### 写入 summary 5/15
             if (should(step, args.summary_freq) or
                     should(step, args.image_summary_freq) or
                     should_eval(step, args.eval_summary_freq)):

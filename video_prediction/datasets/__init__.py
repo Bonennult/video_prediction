@@ -18,8 +18,9 @@ def get_dataset_class(dataset):
         'ucf101': 'UCF101VideoDataset',
         'cartgripper': 'CartgripperVideoDataset',
     }
-    dataset_class = dataset_mappings.get(dataset, dataset)
-    dataset_class = globals().get(dataset_class)
+    dataset_class = dataset_mappings.get(dataset, dataset)   ### 第二个参数是default 5/3
+    dataset_class = globals().get(dataset_class)   ### globals()，pyhton内置函数，返回全局变量的字典 5/3
+                                    ### 使用get()是为了获得类的体，而不仅仅是类的名字（一个字符串） 5/3
     if dataset_class is None or not issubclass(dataset_class, BaseVideoDataset):
         raise ValueError('Invalid dataset %s' % dataset)
     return dataset_class

@@ -1,3 +1,5 @@
+### 基本已经转换（pytorch）完毕 5/15
+
 import tensorflow as tf
 from tensorflow.python.util import nest
 
@@ -10,6 +12,8 @@ from video_prediction.utils import tf_utils
 
 
 def encoder(inputs, nef=64, n_layers=3, norm_layer='instance'):
+    ### nef 是卷积层输出的 特征层数（通道数） 5/8
+    ### input = [batch, in_height, in_width, in_channels] 5/8
     norm_layer = ops.get_norm_layer(norm_layer)
     layers = []
     paddings = [[0, 0], [1, 1], [1, 1], [0, 0]]
@@ -70,10 +74,11 @@ def image_sn_discriminator(images, ndf=64):
 
 
 def video_sn_discriminator(clips, ndf=64):
-    clips = tf_utils.transpose_batch_time(clips)
-    batch_size = clips.shape[0].value
+    ### clips_shape=[time, batch, height, width, channel]
+    clips = tf_utils.transpose_batch_time(clips)  ### 交换前两个维度 5/9
+    batch_size = clips.shape[0].value         ### 交换后第0个维度是 batchsize 5/9
     layers = []
-    paddings = [[0, 0], [1, 1], [1, 1], [1, 1], [0, 0]]
+    paddings = [[0, 0], [1, 1], [1, 1], [1, 1], [0, 0]]  ### BDHWC
 
     def conv3d(inputs, *args, **kwargs):
         kwargs.setdefault('padding', 'VALID')

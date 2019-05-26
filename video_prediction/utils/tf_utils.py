@@ -103,12 +103,18 @@ def print_loss_info(losses, *tensors):
 
 
 def with_flat_batch(flat_batch_fn, ndims=4):
+    ### 相当于一个装饰器 5/9
+    ### 用 flat_batch_fn 装饰 fn 5/9
     def fn(x, *args, **kwargs):
+        ### 如果 x 为图像，则应该为 NDHWC 5/9
         shape = tf.shape(x)
         flat_batch_shape = tf.concat([[-1], shape[-(ndims-1):]], axis=0)
-        flat_batch_shape.set_shape([ndims])
-        flat_batch_x = tf.reshape(x, flat_batch_shape)
+        flat_batch_shape.set_shape([ndims])   ### 没用？ 5/9
+        flat_batch_x = tf.reshape(x, flat_batch_shape)  ### shape= -1HWC 5/9
         flat_batch_r = flat_batch_fn(flat_batch_x, *args, **kwargs)
+        ### 对flat_batch_fn的输出的每个元素进行 rehsape 5/9
+        ### reshape = NDxx
+        ### 其中后面的几个维度 xx 由 flat_batch_fn 的输出决定 5/9
         r = nest.map_structure(lambda x: tf.reshape(x, tf.concat([shape[:-(ndims-1)], tf.shape(x)[1:]], axis=0)),
                                flat_batch_r)
         return r
@@ -116,6 +122,7 @@ def with_flat_batch(flat_batch_fn, ndims=4):
 
 
 def transpose_batch_time(x):
+    ### 交换前两个维度 5/9
     if isinstance(x, tf.Tensor) and x.shape.ndims >= 2:
         return tf.transpose(x, [1, 0] + list(range(2, x.shape.ndims)))
     else:
@@ -135,6 +142,9 @@ def unroll_rnn(cell, inputs, scope=None, use_dynamic_rnn=True):
     """Chooses between dynamic_rnn and static_rnn if the leading time dimension is dynamic or not."""
     dim = dimension(inputs, axis=0)
     if use_dynamic_rnn or dim is None:
+        ### tf.nn.dynamic_rnn 的输出为 outputs,states 5/23
+        ### outputs 为所有时间步的输出，shape=(time_steps, batch_size, output_size)
+        ### state 为最后一步的隐状态，shape=(batch_size, state_size)
         return tf.nn.dynamic_rnn(cell, inputs, dtype=tf.float32,
                                  swap_memory=False, time_major=True, scope=scope)
     else:
@@ -162,6 +172,7 @@ def static_rnn(cell, inputs, scope=None):
 
 
 def maybe_pad_or_slice(tensor, desired_length):
+    ### 将 tensor 第 0 个维度调整至 desired_length 5/23
     length = tensor.shape.as_list()[0]
     if length < desired_length:
         paddings = [[0, desired_length - length]] + [[0, 0]] * (tensor.shape.ndims - 1)
