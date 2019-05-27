@@ -145,6 +145,7 @@ def unroll_rnn(cell, inputs, scope=None, use_dynamic_rnn=True):
         ### tf.nn.dynamic_rnn 的输出为 outputs,states 5/23
         ### outputs 为所有时间步的输出，shape=(time_steps, batch_size, output_size)
         ### state 为最后一步的隐状态，shape=(batch_size, state_size)
+        ### inputs 应为 D,N,input_size 5/27
         return tf.nn.dynamic_rnn(cell, inputs, dtype=tf.float32,
                                  swap_memory=False, time_major=True, scope=scope)
     else:
@@ -173,6 +174,8 @@ def static_rnn(cell, inputs, scope=None):
 
 def maybe_pad_or_slice(tensor, desired_length):
     ### 将 tensor 第 0 个维度调整至 desired_length 5/23
+    ### tensor 过长时直接从前往后切片 5/27
+    ### tensor 过短时在 0 维度后边 0 padding 5/27
     length = tensor.shape.as_list()[0]
     if length < desired_length:
         paddings = [[0, desired_length - length]] + [[0, 0]] * (tensor.shape.ndims - 1)

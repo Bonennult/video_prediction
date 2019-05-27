@@ -968,6 +968,9 @@ def flatten(input, axis=1, end_axis=-1):
 
 
 def tile_concat(values, axis):
+    ### values为一个list，里边有多个tensor 5/26
+    ### 实现将多个tensor通过broadcasting机制，将他们tile到shape完全相同
+    ### 除了axis维度，可以保持不相同 5/26
     """
     Like concat except that first tiles the broadcastable dimensions if necessary
     """
@@ -980,7 +983,7 @@ def tile_concat(values, axis):
         axis += ndims
     # remove axis dimension
     shapes = [shape.as_list() for shape in shapes]
-    dims = [shape.pop(axis) for shape in shapes]
+    dims = [shape.pop(axis) for shape in shapes]   ### pop 会弹出/返回 axis 位置处的值, shape也会改变 5/26
     shapes = [tf.TensorShape(shape) for shape in shapes]
     # compute broadcasted shape
     b_shape = shapes[0]

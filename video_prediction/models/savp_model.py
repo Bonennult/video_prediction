@@ -325,12 +325,14 @@ class SAVPCell(tf.nn.rnn_cell.RNNCell):
         
         ### zs 是初始的 rnn state，zero state 5/16
         ### nz 是 state 的特征维度 5/16
+        ### zs.shape = D,N,nz 5/27
         if 'zs' in inputs and self.hparams.use_rnn_z and not self.hparams.ablation_rnn:
             rnn_z_state_size = tf.TensorShape([self.hparams.nz])
             if self.hparams.rnn == 'lstm':
                 rnn_z_state_size = tf.nn.rnn_cell.LSTMStateTuple(rnn_z_state_size, rnn_z_state_size)
             state_size['rnn_z_state'] = rnn_z_state_size
         ### pix_dictribs 是什么？ 5/16
+        ### 暂时忽略 5/27
         if 'pix_distribs' in inputs:
             state_size['gen_pix_distrib'] = tf.TensorShape([height, width, num_motions])
             state_size['last_pix_distribs'] = [tf.TensorShape([height, width, num_motions])] * self.hparams.last_frames
@@ -454,6 +456,7 @@ class SAVPCell(tf.nn.rnn_cell.RNNCell):
 
     def call(self, inputs, states):
         ### inputs NHWC 5/16
+        ### 这里的 inputs 是已经经过 unroll_rnn 在 0 维度拆分过的 5/27
         norm_layer = ops.get_norm_layer(self.hparams.norm_layer)
         downsample_layer = ops.get_downsample_layer(self.hparams.downsample_layer)
         upsample_layer = ops.get_upsample_layer(self.hparams.upsample_layer)
@@ -468,6 +471,7 @@ class SAVPCell(tf.nn.rnn_cell.RNNCell):
 
         ### schedule sampling 5/23
         image = tf.where(self.ground_truth[t], inputs['images'], states['gen_image'])  # schedule sampling (if any)
+        ### 更新last_images 5/26
         last_images = states['last_images'][1:] + [image]
         if 'pix_distribs' in inputs:
             pix_distrib = tf.where(self.ground_truth[t], inputs['pix_distribs'], states['gen_pix_distrib'])
@@ -531,7 +535,8 @@ class SAVPCell(tf.nn.rnn_cell.RNNCell):
                 if self.hparams.where_add == 'all' or (self.hparams.where_add == 'input' and i == 0):
                     ### use_tile_concat [=true]  5/23
                     if self.hparams.use_tile_concat:
-                        h = tile_concat([h, state_action_z[:, None, None, :]], axis=-1)
+                        ### tile + concat 之后的tensor 5/26
+                        h = tile_concat([h, state_action_z[:, None, None, :]], axis=-1) ### 增加两个维度 5/26
                     else:
                         h = [h, state_action_z]
                 ### downsample layer !! 5/16
@@ -540,10 +545,12 @@ class SAVPCell(tf.nn.rnn_cell.RNNCell):
                 h = _maybe_tile_concat_layer(downsample_layer)(
                     h, out_channels, kernel_size=kernel_size, strides=(2, 2))
                 h = norm_layer(h)
-                h = activation_layer(h)
+                h = activation_layer(h)  ### relu 5/26
             if use_conv_rnn:
                 with tf.variable_scope('%s_h%d' % ('conv' if self.hparams.ablation_rnn else self.hparams.conv_rnn, i)):
                     if self.hparams.where_add == 'all':
+                        ### use_tile_concat [=true]  5/23
+                        ### 为什么要 concat state_action_z 两次？ 5/26
                         if self.hparams.use_tile_concat:
                             conv_rnn_h = tile_concat([h, state_action_z[:, None, None, :]], axis=-1)
                         else:
@@ -559,7 +566,7 @@ class SAVPCell(tf.nn.rnn_cell.RNNCell):
                         conv_rnn_state = conv_rnn_states[len(new_conv_rnn_states)]
                         conv_rnn_h, conv_rnn_state = self._conv_rnn_func(conv_rnn_h, conv_rnn_state, out_channels)
                         new_conv_rnn_states.append(conv_rnn_state)
-            layers.append((h, conv_rnn_h) if use_conv_rnn else (h,))
+            layers.append((h, conv_rnn_h) if use_conv_rnn else (h,))  ### layers[-1][-1]是 conv_rnn_h 或 h 5/26
 
         num_encoder_layers = len(layers)
         for i, (out_channels, use_conv_rnn) in enumerate(self.decoder_layer_specs):
@@ -573,6 +580,7 @@ class SAVPCell(tf.nn.rnn_cell.RNNCell):
                         h = tile_concat([h, state_action_z[:, None, None, :]], axis=-1)
                     else:
                         h = [h, state_action_z]
+                ### upsample_layer = [upsample_conv2d] 5/27
                 h = _maybe_tile_concat_layer(upsample_layer)(
                     h, out_channels, kernel_size=(3, 3), strides=(2, 2))
                 h = norm_layer(h)
@@ -599,6 +607,7 @@ class SAVPCell(tf.nn.rnn_cell.RNNCell):
         assert len(new_conv_rnn_states) == len(conv_rnn_states)
 
         if self.hparams.last_frames and self.hparams.num_transformed_images:
+            ### transformation [='cnda'] 5/26
             if self.hparams.transformation == 'flow':
                 with tf.variable_scope('h%d_flow' % len(layers)):
                     h_flow = conv2d(layers[-1][-1], self.hparams.ngf, kernel_size=(3, 3), strides=(1, 1))
@@ -626,8 +635,12 @@ class SAVPCell(tf.nn.rnn_cell.RNNCell):
                 elif self.hparams.transformation == 'cdna':
                     with tf.variable_scope('cdna_kernels'):
                         smallest_layer = layers[num_encoder_layers - 1][-1]
+                        ### 用dense生成cnda的kernel 5/26
+                        ### self.hparams.kernel_size [=(5,5)] 5/26
                         kernels = dense(flatten(smallest_layer), np.prod(kernel_shape))
                         kernels = tf.reshape(kernels, [batch_size] + kernel_shape)
+                        ### kernels.shape=(batch_size, 5, 5, last_frames * num_transformed_images) 5/26
+                        ### 这里的加法采用broadcasting机制，identity_kernel在第0、3个维度上复制相应的次数 5/26
                         kernels = kernels + identity_kernel(self.hparams.kernel_size)[None, :, :, None]
                     kernel_spatial_axes = [1, 2]
                 else:
@@ -638,6 +651,9 @@ class SAVPCell(tf.nn.rnn_cell.RNNCell):
                     kernels = tf.nn.relu(kernels - RELU_SHIFT) + RELU_SHIFT
                     kernels /= tf.reduce_sum(kernels, axis=kernel_spatial_axes, keepdims=True)
 
+        ### generate_scratch_image [=True] 5/26
+        ### ngf [=32] 5/26
+        ### 这一部分对应论文中 Synth pixels 的合成 5/26
         if self.hparams.generate_scratch_image:
             with tf.variable_scope('h%d_scratch' % len(layers)):
                 h_scratch = conv2d(layers[-1][-1], self.hparams.ngf, kernel_size=(3, 3), strides=(1, 1))
@@ -653,15 +669,25 @@ class SAVPCell(tf.nn.rnn_cell.RNNCell):
 
         with tf.name_scope('transformed_images'):
             transformed_images = []
+            ### 这一部分对应论文中 CDNA flow kernels 5/26
             if self.hparams.last_frames and self.hparams.num_transformed_images:
                 if self.hparams.transformation == 'flow':
                     transformed_images.extend(apply_flows(last_images, flows))
                 else:
                     transformed_images.extend(apply_kernels(last_images, kernels, self.hparams.dilation_rate))
+            ### 对应前面的num_masks 5/26
+            ### 对应了论文中的 Warped pixels 5/26
+            ### prev_image_background [=True] 5/26
+            ### last_image_background [=False] 5/26
+            ### first_image_background =True,
+            ### last_context_image_background=False,
+            ### context_images_background=False,
+            ### generate_scratch_image=True,
             if self.hparams.prev_image_background:
                 transformed_images.append(image)
             if self.hparams.first_image_background and not self.hparams.context_images_background:
                 transformed_images.append(self.inputs['images'][0])
+            ### last_image是指context_image? 5/26
             if self.hparams.last_image_background and not self.hparams.context_images_background:
                 transformed_images.append(self.inputs['images'][self.hparams.context_frames - 1])
             if self.hparams.last_context_image_background and not self.hparams.context_images_background:
@@ -702,12 +728,15 @@ class SAVPCell(tf.nn.rnn_cell.RNNCell):
 
         with tf.name_scope('masks'):
             if len(transformed_images) > 1:
+                ### 对应论文decoder最后一层到Composite mask的实线箭头 5/26
                 with tf.variable_scope('h%d_masks' % len(layers)):
                     h_masks = conv2d(layers[-1][-1], self.hparams.ngf, kernel_size=(3, 3), strides=(1, 1))
                     h_masks = norm_layer(h_masks)
                     h_masks = activation_layer(h_masks)
 
+                ### 对应论文Composite mask中32层到7层的转化 5/26
                 with tf.variable_scope('masks'):
+                    ### dependent_mask [=True] 5/26
                     if self.hparams.dependent_mask:
                         h_masks = tf.concat([h_masks] + transformed_images, axis=-1)
                     masks = conv2d(h_masks, len(transformed_images), kernel_size=(3, 3), strides=(1, 1))
@@ -725,6 +754,7 @@ class SAVPCell(tf.nn.rnn_cell.RNNCell):
             gen_image = tf.add_n([transformed_image * mask
                                   for transformed_image, mask in zip(transformed_images, masks)])
 
+        ### 所有与 pix_distribs 有关的都暂时忽略。。。 5/27
         if 'pix_distribs' in inputs:
             with tf.name_scope('gen_pix_distribs'):
                 assert len(transformed_pix_distribs) == len(masks)
@@ -770,7 +800,10 @@ def generator_given_z_fn(inputs, mode, hparams):
     # all the inputs needs to have the same length for unrolling the rnn
     inputs = {name: tf_utils.maybe_pad_or_slice(input, hparams.sequence_length - 1)
               for name, input in inputs.items()}
+    ### 'images' DNHWC 5/27
     cell = SAVPCell(inputs, mode, hparams)
+    ### unroll_rnn 过程中将 'iamges' 沿着 0 维度（D）拆分逐个送入 rnnCell 5/27
+    ### inputs = D,N,input_size 5/27
     outputs, _ = tf_utils.unroll_rnn(cell, inputs)  ### 就是把 inputs 输进 RNN 得到输出 outputs,states 5/23
     outputs['ground_truth_sampling_mean'] = tf.reduce_mean(tf.to_float(cell.ground_truth[hparams.context_frames:]))
     return outputs
@@ -778,6 +811,7 @@ def generator_given_z_fn(inputs, mode, hparams):
 
 def generator_fn(inputs, mode, hparams):
     ### input shape DNHWC 5/23
+    ### D = sequence_length 5/27
     batch_size = tf.shape(inputs['images'])[1]
 
     if hparams.nz == 0:
@@ -793,6 +827,8 @@ def generator_fn(inputs, mode, hparams):
             zs_posterior = outputs_posterior['zs_mu'] + tf.sqrt(tf.exp(outputs_posterior['zs_log_sigma_sq'])) * eps
         inputs_posterior = dict(inputs)
         inputs_posterior['zs'] = zs_posterior
+        ### 'images' 和 'zs' 的长度可能不一样？D 和 D-1？ 5/27
+        ### 是的，所以 generator_given_z_fn 中要首先进行 tf_utils.maybe_pad_or_slice 5/27
 
         # prior
         if hparams.learn_prior:
@@ -1008,6 +1044,7 @@ def apply_cdna_kernels(image, kernels, dilation_rate=(1, 1)):
     # Swap the batch and channel dimensions.
     image_transposed = tf.transpose(image_padded, [3, 1, 2, 0])
     # Transform image.
+    ### 因为要对batch中的每个样本单独做卷积，因此需要用 depthwise_con2d？ 5/26
     outputs = tf.nn.depthwise_conv2d(image_transposed, kernels, [1, 1, 1, 1], padding='VALID', rate=dilation_rate)
     # Transpose the dimensions to where they belong.
     outputs = tf.reshape(outputs, [color_channels, height, width, batch_size, num_transformed_images])
@@ -1059,14 +1096,16 @@ def apply_flows(image, flows):
 
 
 def identity_kernel(kernel_size):
-    ### kernel 中心为1或0.5，其余为0，有什么用？ 5/19
+    ### kernel 中心为1或0.25，其余为0，有什么用？ 5/19
     kh, kw = kernel_size
     kernel = np.zeros(kernel_size)
 
     def center_slice(k):
         if k % 2 == 0:
+            ### 只有最中心的4个点为0.25 5/26
             return slice(k // 2 - 1, k // 2 + 1)
         else:
+            ### 只有最中心的一个点 k//2 处为1.0 5/26
             return slice(k // 2, k // 2 + 1)
 
     kernel[center_slice(kh), center_slice(kw)] = 1.0
