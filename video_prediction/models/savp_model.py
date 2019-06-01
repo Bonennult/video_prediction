@@ -481,6 +481,7 @@ class SAVPCell(tf.nn.rnn_cell.RNNCell):
 
         state_action = []
         state_action_z = []
+        ### 暂时默认没有 5/28
         if 'actions' in inputs:
             state_action.append(inputs['actions'])
             state_action_z.append(inputs['actions'])
@@ -499,6 +500,7 @@ class SAVPCell(tf.nn.rnn_cell.RNNCell):
                         rnn_z = tf.nn.tanh(rnn_z)
                     else:
                         ### LSTMCell 5/23
+                        ### rnn_z 是 output, rnn_z_state 是 new_state，与 states['rnn_z_state']shape相同 5/28
                         rnn_z, rnn_z_state = self._rnn_func(inputs['zs'], states['rnn_z_state'], self.hparams.nz)
                 state_action_z.append(rnn_z)
             else:
@@ -526,6 +528,7 @@ class SAVPCell(tf.nn.rnn_cell.RNNCell):
         for i, (out_channels, use_conv_rnn) in enumerate(self.encoder_layer_specs):
             with tf.variable_scope('h%d' % i):
                 if i == 0:
+                    ### 注意这里是self.inputs而不是inputs,取出的是第一帧 5/29
                     h = tf.concat([image, self.inputs['images'][0]], axis=-1)
                     kernel_size = (5, 5)
                 else:
@@ -690,6 +693,7 @@ class SAVPCell(tf.nn.rnn_cell.RNNCell):
             ### last_image是指context_image? 5/26
             if self.hparams.last_image_background and not self.hparams.context_images_background:
                 transformed_images.append(self.inputs['images'][self.hparams.context_frames - 1])
+            ### last_context_image_background 暂时忽略。。。 5/30
             if self.hparams.last_context_image_background and not self.hparams.context_images_background:
                 last_context_image = tf.cond(
                     tf.less(t, self.hparams.context_frames),
@@ -793,6 +797,14 @@ class SAVPCell(tf.nn.rnn_cell.RNNCell):
             new_states['last_pix_distribs'] = last_pix_distribs
         if 'states' in inputs:
             new_states['gen_state'] = gen_state
+        print('$'*20)
+        print('-'*10,' outputs ', '-'*10)
+        for k,v in outputs.items():
+            print(k,v.shape)
+        print('-'*10,' new_states ', '-'*10)
+        for k,v in new_states.items():
+            print(k,v.shape if not isinstance(v,(list,tuple)) else v)
+        print('$'*20)
         return outputs, new_states
 
 
@@ -805,6 +817,9 @@ def generator_given_z_fn(inputs, mode, hparams):
     ### unroll_rnn 过程中将 'iamges' 沿着 0 维度（D）拆分逐个送入 rnnCell 5/27
     ### inputs = D,N,input_size 5/27
     outputs, _ = tf_utils.unroll_rnn(cell, inputs)  ### 就是把 inputs 输进 RNN 得到输出 outputs,states 5/23
+    print('*'*20)
+    print('savp_rnn\n',outputs)  ### for debug 6/1
+    print('*'*20)
     outputs['ground_truth_sampling_mean'] = tf.reduce_mean(tf.to_float(cell.ground_truth[hparams.context_frames:]))
     return outputs
 
@@ -1041,10 +1056,12 @@ def apply_cdna_kernels(image, kernels, dilation_rate=(1, 1)):
     # depthwise_conv2d can apply a different transformation to each sample.
     kernels = tf.transpose(kernels, [1, 2, 0, 3])
     kernels = tf.reshape(kernels, [kernel_size[0], kernel_size[1], batch_size, num_transformed_images])
+    ### kernels = hwNC' 5/30
     # Swap the batch and channel dimensions.
     image_transposed = tf.transpose(image_padded, [3, 1, 2, 0])
     # Transform image.
     ### 因为要对batch中的每个样本单独做卷积，因此需要用 depthwise_con2d？ 5/26
+    ### image_transposed = CHWN 5/30
     outputs = tf.nn.depthwise_conv2d(image_transposed, kernels, [1, 1, 1, 1], padding='VALID', rate=dilation_rate)
     # Transpose the dimensions to where they belong.
     outputs = tf.reshape(outputs, [color_channels, height, width, batch_size, num_transformed_images])

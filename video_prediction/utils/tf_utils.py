@@ -177,11 +177,15 @@ def maybe_pad_or_slice(tensor, desired_length):
     ### tensor 过长时直接从前往后切片 5/27
     ### tensor 过短时在 0 维度后边 0 padding 5/27
     length = tensor.shape.as_list()[0]
+    #print('desired length  ',desired_length)  ### for debug 6/1
+    #print('tensor length  ', length)   ### 6/1
     if length < desired_length:
         paddings = [[0, desired_length - length]] + [[0, 0]] * (tensor.shape.ndims - 1)
         tensor = tf.pad(tensor, paddings)
     elif length > desired_length:
         tensor = tensor[:desired_length]
+    #print(tensor.shape.as_list()[0])   ### 6/1
+    #print(desired_length)          ### 6/1
     assert tensor.shape.as_list()[0] == desired_length
     return tensor
 
