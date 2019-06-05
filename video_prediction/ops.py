@@ -976,7 +976,7 @@ def tile_concat(values, axis):
     """
     shapes = [value.get_shape() for value in values]
     # convert axis to positive form
-    ndims = shapes[0].ndims
+    ndims = shapes[0].ndims    ### tf.TensorShape().ndims
     for shape in shapes[1:]:
         assert ndims == shape.ndims
     if -ndims < axis < 0:

@@ -145,6 +145,7 @@ def discriminator_fn(inputs, outputs, mode, hparams):
     else:
         images_enc_real = inputs['images'][1:]
         images_enc_fake = outputs['gen_images_enc']
+        ### use_same_discriminator [=FALSE] 6/5
         if hparams.use_same_discriminator:
             with tf.name_scope("real"):
                 discrim_outputs_enc_real = discriminator_given_video_fn(images_enc_real, hparams)
@@ -704,6 +705,8 @@ class SAVPCell(tf.nn.rnn_cell.RNNCell):
                 transformed_images.extend(tf.unstack(self.inputs['images'][:self.hparams.context_frames]))
             if self.hparams.generate_scratch_image:
                 transformed_images.append(scratch_image)
+            ##print('transformed_images  ',transformed_images) ### 6/2 6/5
+            ##print('-'*20) 6/5
 
         if 'pix_distribs' in inputs:
             with tf.name_scope('transformed_pix_distribs'):
@@ -797,14 +800,14 @@ class SAVPCell(tf.nn.rnn_cell.RNNCell):
             new_states['last_pix_distribs'] = last_pix_distribs
         if 'states' in inputs:
             new_states['gen_state'] = gen_state
-        print('$'*20)
-        print('-'*10,' outputs ', '-'*10)
-        for k,v in outputs.items():
-            print(k,v.shape)
-        print('-'*10,' new_states ', '-'*10)
-        for k,v in new_states.items():
-            print(k,v.shape if not isinstance(v,(list,tuple)) else v)
-        print('$'*20)
+        #print('$'*20)
+        #print('-'*10,' outputs ', '-'*10)
+        #for k,v in outputs.items():
+        #    print(k,v.shape)
+        #print('-'*10,' new_states ', '-'*10)
+        #for k,v in new_states.items():
+        #    print(k,v.shape if not isinstance(v,(list,tuple)) else v)
+        #print('$'*20)
         return outputs, new_states
 
 
@@ -817,9 +820,9 @@ def generator_given_z_fn(inputs, mode, hparams):
     ### unroll_rnn 过程中将 'iamges' 沿着 0 维度（D）拆分逐个送入 rnnCell 5/27
     ### inputs = D,N,input_size 5/27
     outputs, _ = tf_utils.unroll_rnn(cell, inputs)  ### 就是把 inputs 输进 RNN 得到输出 outputs,states 5/23
-    print('*'*20)
-    print('savp_rnn\n',outputs)  ### for debug 6/1
-    print('*'*20)
+    ##print('*'*20) 6/5
+    ##print('savp_rnn\n',outputs)  ### for debug 6/1
+    ##print('*'*20)
     outputs['ground_truth_sampling_mean'] = tf.reduce_mean(tf.to_float(cell.ground_truth[hparams.context_frames:]))
     return outputs
 
@@ -1083,6 +1086,7 @@ def apply_kernels(image, kernels, dilation_rate=(1, 1)):
         A list of `num_transformed_images` 4-D tensors, each of shape
             `[batch, in_height, in_width, in_channels]`.
     """
+    ##print('apply_kernels: input  ',image)  ### 6/2 6/5
     if isinstance(image, list):
         image_list = image
         kernels_list = tf.split(kernels, len(image_list), axis=-1)
@@ -1096,6 +1100,8 @@ def apply_kernels(image, kernels, dilation_rate=(1, 1)):
             outputs = apply_dna_kernels(image, kernels, dilation_rate=dilation_rate)
         else:
             raise ValueError
+    ##print('apply_kernels: output  ',outputs)  ### 6/2 6/5
+    ##print('-'*20)
     return outputs
 
 
